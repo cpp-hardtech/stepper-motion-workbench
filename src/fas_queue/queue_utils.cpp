@@ -6,12 +6,11 @@ uint32_t StepperQueue::ticksInQueue() const {
   fasDisableInterrupts();
   uint8_t rp = read_idx;
   uint8_t wp = next_write_idx;
-  fasEnableInterrupts();
-  if (wp == rp) {
-    return 0;
+  if (rp != wp && isRunning()) {
+    ++rp;  // Skip the entry being processed.
   }
+  fasEnableInterrupts();
   uint32_t ticks = 0;
-  rp++;  // ignore currently processed entry
   while (wp != rp) {
     const struct queue_entry* e = &entry[rp++ & QUEUE_LEN_MASK];
     ticks += e->ticks;
@@ -29,11 +28,10 @@ bool StepperQueue::hasTicksInQueue(uint32_t min_ticks) const {
   fasDisableInterrupts();
   uint8_t rp = read_idx;
   uint8_t wp = next_write_idx;
-  fasEnableInterrupts();
-  if (wp == rp) {
-    return false;
+  if (rp != wp && isRunning()) {
+    ++rp;  // Skip the entry being processed.
   }
-  rp++;  // ignore currently processed entry
+  fasEnableInterrupts();
   while (wp != rp) {
     const struct queue_entry* e = &entry[rp & QUEUE_LEN_MASK];
     uint32_t tmp = e->ticks;
