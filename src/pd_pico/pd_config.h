@@ -1,0 +1,50 @@
+// pd_pico/pd_config.h - RP2040/RP2350 platform configuration
+//
+// This file defines Pico-specific constants for the StepperMotion library:
+// - Queue topology (MAX_STEPPER, NUM_QUEUES, QUEUE_LEN)
+// - Timing constants (TICKS_PER_S, MIN_CMD_TICKS, delays)
+// - Feature flags for Pico-specific behavior
+//
+// Included by fas_arch/common.h during platform dispatch.
+
+#ifndef PD_PICO_CONFIG_H
+#define PD_PICO_CONFIG_H
+
+#if defined(__FREERTOS)
+#include <FreeRTOS.h>
+#include <task.h>
+#define noop_or_wait vTaskDelay(1)
+#else
+// No RTOS: the Pico alarm pool calls manageSteppers() at the same rate.
+#include <pico/time.h>
+#define noop_or_wait sleep_us(100)
+#endif
+
+#define SUPPORT_UNSAFE_ABS_SPEED_LIMIT_SETTING
+
+#define NUM_QUEUES 4 * NUM_PIOS
+#define MAX_STEPPER (NUM_QUEUES)
+#define QUEUE_LEN 32
+
+#define TICKS_PER_S 16000000L
+#define MIN_CMD_TICKS (TICKS_PER_S / 5000)
+#define MIN_DIR_DELAY_US (MIN_CMD_TICKS / (TICKS_PER_S / 1000000))
+#define MAX_DIR_DELAY_US (65535 / (TICKS_PER_S / 1000000))
+#define DELAY_MS_BASE 4
+
+#define DEBUG_LED_HALF_PERIOD 50
+
+// One command is already in flight and the TX FIFO holds four more. Four
+// old-direction pauses ahead of the new command fill those FIFO slots. The
+// filler writes DIR only after the following command itself has entered the
+// FIFO: that put needs one more pull, and the pull takes a pause.
+#define SUPPORT_PAUSE_CMD_COUNTING
+#define PICO_DIR_DRAIN_WORDS 4
+// Tick length of those four pauses. A planner that emits one pause of this
+// length has queued one word; the driver still adds the missing words.
+#define BEFORE_DIR_CHANGE_DELAY_TICKS(q) \
+  ((uint16_t)(PICO_DIR_DRAIN_WORDS * MIN_CMD_TICKS))
+
+#define SUPPORT_TASK_RATE_CHANGE
+
+#endif /* PD_PICO_CONFIG_H */
