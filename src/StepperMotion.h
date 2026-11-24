@@ -187,9 +187,10 @@ class StepperMotion {
   // setDelayToEnable() sets the delay from enable to first step.
   // Return values:
   //   - DelayResultCode::OK:       Delay accepted
-  //   - DelayResultCode::TOO_LOW:  Delay is 0 (minimum is 1µs)
+  //   - DelayResultCode::TOO_LOW:  Nonzero delay is shorter than MIN_CMD_TICKS
   //   - DelayResultCode::TOO_HIGH: Delay exceeds MAX_ON_DELAY_TICKS
   //                                (~120ms ESP32, ~60ms AVR @ 16MHz)
+  // A zero delay disables the enable hold time.
   //
   // setDelayToDisable() sets the delay from last step to disable.
   // This is executed in the periodic stepper task (~4-10ms rate) and thus
@@ -259,7 +260,8 @@ class StepperMotion {
   // Note: no update on `stopMove()`
   //
   // Returns 0 on success, or -1 on invalid value.
-  // Invalid is faster than MaxSpeed or slower than ~250 Mio ticks/step.
+  // The period must be at least getMaxSpeedInTicks() and less than
+  // TICKS_FOR_STOPPED_MOTOR.
   int8_t setSpeedInUs(uint32_t min_step_us);
   int8_t setSpeedInTicks(uint32_t min_step_ticks);
   int8_t setSpeedInHz(uint32_t speed_hz);
@@ -390,6 +392,7 @@ class StepperMotion {
   // ### runForward() and runBackwards()
   // These commands just let the motor run continuously in one direction.
   // If the motor is running in the opposite direction, it will reverse
+  // runBackward() requires a direction pin.
   // return value as with move/moveTo
   MoveResultCode runForward();
   MoveResultCode runBackward();
@@ -413,6 +416,7 @@ class StepperMotion {
   //    acceleration < 0
   //        => accelerate towards negative maximum speed if allow_reverse
   //        => decelerate towards motor stop if allow_reverse = false
+  // INT32_MIN returns MOVE_ERR_ACCELERATION_OUT_OF_RANGE.
   // return value as with move/moveTo
   MoveResultCode moveByAcceleration(int32_t acceleration,
                                     bool allow_reverse = true);
