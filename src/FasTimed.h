@@ -42,7 +42,9 @@ enum class TimedStatus : uint8_t {
 // The feeder emits one or two addQueueEntry commands per axis whose tick
 // sums are equal. When the requested duration is not an exact legal command
 // split, the shared sum moves to the nearest duration that is, and no
-// farther than the longest |delta| of the call. actualTicks() is that sum.
+// farther than the longest |delta| of the call. addDeltaExact() requires the
+// requested duration to be representable. actualTicks64() reports the total
+// issued duration for the plan.
 //
 // HORIZON is only the number of chunks waiting to be queued. Each chunk is
 // already one command, so the ring stays small (default 8). A longer path
@@ -114,6 +116,64 @@ class FasTimed {
   // shape. On Ok the planned position advances by steps and actualTicks()
   // grows by the duration that will be issued.
   TimedAdd addDelta(const int16_t steps[NAXES], uint16_t ticks) {
+    return appendDelta(steps, ticks, false);
+  }
+
+  // Queue a delta only when every axis can emit exactly ticks.
+  TimedAdd addDeltaExact(const int16_t steps[NAXES], uint16_t ticks) {
+    return appendDelta(steps, ticks, true);
+  }
+
+  // Queue an absolute waypoint relative to the last committed position.
+  // The same per-axis travel and timing limits as addDelta() apply.
+  TimedAdd addWaypoint(const int32_t position[NAXES], uint16_t ticks) {
+    int16_t steps[NAXES];
+    for (uint8_t i = 0; i < NAXES; ++i) {
+      const int64_t delta = (int64_t)position[i] - _p[i];
+      if (delta < -128 || delta > 128) {
+        return TimedAdd::Rejected;
+      }
+      steps[i] = delta;
+    }
+    return addDelta(steps, ticks);
+  }
+
+  // Queue a shared dwell at rest. The whole duration must fit in the free
+  // horizon. Long dwells consume multiple chunks and keep the current DIR.
+  TimedAdd addDwellTicks(uint32_t ticks) {
+    if (_fault || _error || !_synced || !all_registered()) {
+      return TimedAdd::Rejected;
+    }
+    if (ticks == 0) {
+      return TimedAdd::Ok;
+    }
+    uint32_t chunks = 1 + (ticks - 1) / UINT16_MAX;
+    if (ticks < MIN_CMD_TICKS || chunks > (uint32_t)(HORIZON - _count)) {
+      return TimedAdd::Rejected;
+    }
+    for (uint8_t i = 0; i < NAXES; ++i) {
+      if (_ramp_p[i] != 0) {
+        return TimedAdd::TimingNotAchievable;
+      }
+    }
+
+    // Balanced pieces avoid leaving a final pause shorter than MIN_CMD_TICKS.
+    uint32_t remaining = ticks;
+    for (; chunks > 0; --chunks) {
+      const uint16_t part = remaining / chunks;
+      Chunk& chunk = _chunk[_count++];
+      clear_chunk(&chunk);
+      for (uint8_t i = 0; i < NAXES; ++i) {
+        fill_axis(&chunk, i, 0, 0, part);
+      }
+      remaining -= part;
+    }
+    _actual += ticks;
+    return TimedAdd::Ok;
+  }
+
+ private:
+  TimedAdd appendDelta(const int16_t steps[NAXES], uint16_t ticks, bool exact) {
     if (_fault || _error || !_synced || !all_registered()) {
       return TimedAdd::Rejected;
     }
@@ -143,8 +203,8 @@ class FasTimed {
     if (!speed_ok(mag, ticks)) {
       return TimedAdd::TimingNotAchievable;
     }
-    uint16_t issued = 0;
-    if (!find_duration(mag, ticks, &issued)) {
+    uint16_t issued = ticks;
+    if (exact ? !realizable_all(mag, ticks) : !find_duration(mag, ticks, &issued)) {
       return TimedAdd::TimingNotAchievable;
     }
     uint32_t p_act[NAXES];
@@ -193,6 +253,7 @@ class FasTimed {
     return TimedAdd::Ok;
   }
 
+ public:
   int32_t plannedPosition(uint8_t i) const {
     if (i >= NAXES) {
       return 0;
@@ -201,7 +262,9 @@ class FasTimed {
   }
 
   // Sum of the durations actually committed, in driver ticks.
-  uint32_t actualTicks() const { return _actual; }
+  uint64_t actualTicks64() const { return _actual; }
+  // 32-bit view for clients that track the sum modulo 2^32.
+  uint32_t actualTicks() const { return (uint32_t)_actual; }
 
   bool isBusy() const {
     if (_count > 0 || any_waiting()) {
@@ -281,7 +344,7 @@ class FasTimed {
   bool _count_up[NAXES];
   Chunk _chunk[HORIZON];
   uint16_t _count;
-  uint32_t _actual;
+  uint64_t _actual;
   bool _synced;
   bool _kicked;
   bool _underrun;
