@@ -93,18 +93,29 @@ MoveResultCode RampGenerator::moveTo(int32_t position,
   inject_fill_interrupt(2);
   return MOVE_OK;
 }
-MoveResultCode RampGenerator::move(int32_t move) {
+MoveResultCode RampGenerator::move(int32_t move,
+                                   const struct queue_end_s* queue_end) {
   MoveResultCode res = _parameters.checkValidConfig();
   if (res != MOVE_OK) {
     return res;
   }
-  _parameters.setTargetRelativePosition(move);
+  if (isRampGeneratorActive()) {
+    _parameters.setTargetRelativePosition(move);
+  } else {
+    fasDisableInterrupts();
+    const uint32_t queued = queue_end->pos;
+    fasEnableInterrupts();
+    _parameters.setTargetPosition(queued + move);
+  }
   _startMove(move != 0);
   return MOVE_OK;
 }
-void RampGenerator::advanceTargetPosition(int32_t delta) {
+void RampGenerator::advanceTargetPosition(uint32_t delta) {
   // called with interrupts disabled
   _ro.target_pos += delta;
+  if (_parameters.apply && _parameters.move_absolute) {
+    _parameters.move_value = (uint32_t)_parameters.move_value + delta;
+  }
 }
 
 void RampGenerator::afterCommandEnqueued(const NextCommand* command) {

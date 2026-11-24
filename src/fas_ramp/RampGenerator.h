@@ -27,7 +27,7 @@ class RampGenerator {
   void init();
   inline int32_t targetPosition() const { return _ro.targetPosition(); }
   inline void setTargetPosition(int32_t pos) { _ro.setTargetPosition(pos); }
-  void advanceTargetPosition(int32_t delta);
+  void advanceTargetPosition(uint32_t delta);
   inline void setSpeedInTicks(uint32_t min_step_ticks) {
     _parameters.setSpeedInTicks(min_step_ticks);
   }
@@ -72,7 +72,7 @@ class RampGenerator {
     return _parameters.checkValidConfig() == MOVE_OK;
   }
   void applySpeedAcceleration();
-  MoveResultCode move(int32_t move);
+  MoveResultCode move(int32_t move, const struct queue_end_s* queue);
   MoveResultCode moveTo(int32_t position, const struct queue_end_s* queue);
   MoveResultCode startRun(bool countUp);
   inline void forceStop() { _ro.immediateStop(); }

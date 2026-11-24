@@ -111,16 +111,16 @@ void _getNextCommand(const struct ramp_ro_s* ramp, const struct ramp_rw_s* rw,
     need_count_up = ramp->config.parameters.keep_running_count_up;
     remaining_steps = 0xfffffff;
   } else {
-    // this can overflow, which is legal
-    int32_t delta = ramp->target_pos - queue_end->pos;
+    // Positions wrap in 32 bits. A half-range displacement counts down.
+    const uint32_t delta = ramp->target_pos - (uint32_t)queue_end->pos;
 
     if (delta == 0) {
       // this case can happen on overshoot. So reverse current direction
       need_count_up = !count_up;
     } else {
-      need_count_up = delta > 0;
+      need_count_up = delta <= (uint32_t)INT32_MAX;
     }
-    remaining_steps = fas_abs(delta);
+    remaining_steps = need_count_up ? delta : 0u - delta;
   }
 
   uint32_t performed_ramp_up_steps = rw->performed_ramp_up_steps;
