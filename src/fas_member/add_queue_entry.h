@@ -4,6 +4,9 @@ AqeResultCode StepperMotion::addQueueEntry(
   if (cmd == NULL) {
     return q->addQueueEntry(NULL, start);
   }
+  if (q->areCommandsSuspended()) {
+    return AQE_ERROR_COMMANDS_SUSPENDED;
+  }
   if (cmd->ticks < q->max_speed_in_ticks) {
     return AQE_ERROR_TICKS_TOO_LOW;
   }

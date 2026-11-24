@@ -185,6 +185,74 @@ static void g_ramp_rearms_itself() {
   check(!s.isQueueEmpty(), "G: and the ramp queued commands");
 }
 
+static unsigned external_pin_writes = 0;
+static uint8_t last_pin = PIN_UNDEFINED;
+static uint8_t last_level = 0;
+static bool acknowledge_pin_write = true;
+
+static bool record_external_pin(uint8_t pin, uint8_t level) {
+  ++external_pin_writes;
+  last_pin = pin;
+  last_level = level;
+  return acknowledge_pin_write ? level == HIGH : level != HIGH;
+}
+
+static void h_suspended_command_leaves_enable_pin_alone() {
+  connect();
+  engine.setExternalCallForPin(record_external_pin);
+  constexpr uint8_t pin = PIN_EXTERNAL_FLAG | 10;
+  s.setEnablePin(pin, true);
+  s.setAutoEnable(true);
+  s.forceStop();
+
+  acknowledge_pin_write = false;
+  external_pin_writes = 0;
+  const AqeResultCode stopped = s.addQueueEntry(&cmd, false);
+  printf("H: suspended ENABLE: %s, pin writes=%u, entries=%u\n",
+         toString(stopped), external_pin_writes,
+         static_cast<unsigned>(s.queueEntries()));
+  check(stopped == AQE_ERROR_COMMANDS_SUSPENDED && !aqeRetry(stopped),
+        "H: suspension takes precedence over waiting for ENABLE");
+  check(external_pin_writes == 0 && s.isQueueEmpty(),
+        "H: a suspended command writes no ENABLE pin or queue entry");
+
+  acknowledge_pin_write = true;
+  external_pin_writes = 0;
+  s.resumeCommands();
+  check(s.addQueueEntry(&cmd, false) == AQE_OK && s.queueEntries() == 1,
+        "H: the same command queues after resume");
+  check(external_pin_writes == 1 && last_pin == pin && last_level == LOW,
+        "H: the resumed command drives the active-low ENABLE pin");
+  engine.setExternalCallForPin(nullptr);
+}
+
+static void i_suspended_command_leaves_direction_pin_alone() {
+  connect();
+  engine.setExternalCallForPin(record_external_pin);
+  constexpr uint8_t pin = PIN_EXTERNAL_FLAG | 11;
+  s.setDirectionPin(pin, true);
+  s.forceStop();
+  const struct stepper_command_s reverse_cmd = {80, 40, false};
+
+  external_pin_writes = 0;
+  const AqeResultCode stopped = s.addQueueEntry(&reverse_cmd, false);
+  printf("I: suspended DIR: %s, pin writes=%u, entries=%u\n",
+         toString(stopped), external_pin_writes,
+         static_cast<unsigned>(s.queueEntries()));
+  check(stopped == AQE_ERROR_COMMANDS_SUSPENDED,
+        "I: a reversed command is refused while suspended");
+  check(external_pin_writes == 0 && s.isQueueEmpty(),
+        "I: a suspended command writes no DIR pin or queue entry");
+
+  external_pin_writes = 0;
+  s.resumeCommands();
+  check(s.addQueueEntry(&reverse_cmd, false) == AQE_OK && s.queueEntries() == 1,
+        "I: the reversed command queues after resume");
+  check(external_pin_writes == 1 && last_pin == pin && last_level == LOW,
+        "I: the resumed command drives the reverse DIR level");
+  engine.setExternalCallForPin(nullptr);
+}
+
 int main() {
   a_refused_not_ok();
   b_queue_untouched();
@@ -193,6 +261,8 @@ int main() {
   e_force_stop_and_new_position();
   f_movetimed_value_preserved();
   g_ramp_rearms_itself();
+  h_suspended_command_leaves_enable_pin_alone();
+  i_suspended_command_leaves_direction_pin_alone();
   if (failures != 0) {
     printf("%d failure(s)\n", failures);
     return 1;
