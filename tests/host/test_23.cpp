@@ -589,6 +589,37 @@ static void test_queue_ticks_tracking() {
   test_result("Queue ticks tracking", ticks == 0);
 }
 
+static void test_realtime_speed_before_and_after_start() {
+  init_queue();
+  StepperMotion s;
+  s.init(NULL, 0, 0);
+  const struct stepper_command_s cmd = {1600, 10, true};
+
+  test_result("Empty queue reports zero speed",
+              s.getCurrentSpeedInUs() == 0 &&
+                  s.getCurrentSpeedInMilliHz() == 0);
+  assert(s.addQueueEntry(&cmd, false) == AQE_OK);
+  assert(!s.isQueueRunning());
+  const auto prefilled_us = s.getCurrentSpeedInUs();
+  const auto prefilled_mhz = s.getCurrentSpeedInMilliHz();
+  printf("  Prefilled speed: %ld us, %ld mHz\n", (long)prefilled_us,
+         (long)prefilled_mhz);
+  test_result("Prefilled queue reports no realtime motion",
+              prefilled_us == 0 && prefilled_mhz == 0);
+  test_result("Idle ramp reports zero speed",
+              s.getCurrentSpeedInUs(false) == 0 &&
+                  s.getCurrentSpeedInMilliHz(false) == 0);
+
+  assert(s.addQueueEntry(NULL, true) == AQE_OK);
+  assert(s.isQueueRunning());
+  const auto running_us = s.getCurrentSpeedInUs();
+  const auto running_mhz = s.getCurrentSpeedInMilliHz();
+  printf("  Running speed: %ld us, %ld mHz\n", (long)running_us,
+         (long)running_mhz);
+  test_result("Started queue reports its command speed",
+              running_us == 100 && running_mhz == 10000000);
+}
+
 static void test_has_steps_detection() {
   printf("Running: hasStepsInQueue detection\n");
   init_queue();
@@ -687,6 +718,7 @@ int main() {
 
   puts("\n=== Part 5: Integration ===");
   test_queue_ticks_tracking();
+  test_realtime_speed_before_and_after_start();
   test_has_steps_detection();
   test_realistic_direction_change_scenario();
 

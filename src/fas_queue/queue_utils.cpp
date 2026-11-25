@@ -54,8 +54,9 @@ bool StepperQueue::getActualTicksWithDirection(
   fasDisableInterrupts();
   uint8_t rp = read_idx;
   uint8_t wp = next_write_idx;
+  const bool has_active_entry = rp != wp && isRunning();
   fasEnableInterrupts();
-  if (wp == rp) {
+  if (!has_active_entry) {
     speed->ticks = 0;
     return true;
   }
