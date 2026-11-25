@@ -98,12 +98,12 @@ struct ramp_parameters_s {
   }
   inline void setTargetRelativePosition(int32_t move) {
     fasDisableInterrupts();
-    if (any_change && !move_absolute) {
-      move_value += move;
+    if (apply && !keep_running) {
+      move_value = (uint32_t)move_value + move;
     } else {
       move_value = move;
+      move_absolute = false;
     }
-    move_absolute = false;
     keep_running = false;
     keep_running_count_up = true;
     any_change = true;

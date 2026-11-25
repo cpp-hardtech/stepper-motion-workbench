@@ -421,7 +421,7 @@ MoveResultCode StepperMotion::move(int32_t move, bool blocking) {
   if ((move < 0) && (_dirPin == PIN_UNDEFINED)) {
     return MOVE_ERR_NO_DIRECTION_PIN;
   }
-  MoveResultCode res = _rg.move(move);
+  MoveResultCode res = _rg.move(move, &_queue()->queue_end);
   if ((res == MOVE_OK) && blocking) {
     while (isRunning()) {
       noop_or_wait;
@@ -640,30 +640,40 @@ int8_t StepperMotion::setSpeedInMilliHz(uint32_t speed_mhz) {
   }
   return setSpeedInTicks(ticks);
 }
-void StepperMotion::setCurrentPosition(int32_t new_pos) {
-  int32_t delta = new_pos - getCurrentPosition();
-  if (delta != 0) {
-    StepperQueue* q = _queue();
+static void shiftQueuePosition(StepperQueue* q, uint32_t delta) {
+  q->queue_end.pos = (uint32_t)q->queue_end.pos + delta;
 #if defined(SUPPORT_RP_PICO)
-    q->pos_offset += delta;
+  q->pos_offset = (uint32_t)q->pos_offset + delta;
 #endif
-    struct queue_end_s* queue_end = &q->queue_end;
+#if defined(SUPPORT_QUEUE_ENTRY_START_POS_U16) || \
+    defined(SUPPORT_QUEUE_ENTRY_END_POS_U16)
+  for (uint8_t i = q->read_idx; i != q->next_write_idx; ++i) {
+    queue_entry& command = q->entry[i & QUEUE_LEN_MASK];
+#if defined(SUPPORT_QUEUE_ENTRY_START_POS_U16)
+    command.start_pos_last16 += (uint16_t)delta;
+#endif
+#if defined(SUPPORT_QUEUE_ENTRY_END_POS_U16)
+    command.end_pos_last16 += (uint16_t)delta;
+#endif
+  }
+#endif
+}
+
+void StepperMotion::setCurrentPosition(int32_t new_pos) {
+  const uint32_t delta = (uint32_t)new_pos - getCurrentPosition();
+  if (delta != 0) {
     fasDisableInterrupts();
-    queue_end->pos = queue_end->pos + delta;
+    shiftQueuePosition(_queue(), delta);
     _rg.advanceTargetPosition(delta);
     fasEnableInterrupts();
   }
 }
 void StepperMotion::setPositionAfterCommandsCompleted(int32_t new_pos) {
   StepperQueue* q = _queue();
-  struct queue_end_s* queue_end = &q->queue_end;
   fasDisableInterrupts();
-  int32_t delta = new_pos - q->queue_end.pos;
-  queue_end->pos = new_pos;
+  const uint32_t delta = (uint32_t)new_pos - q->queue_end.pos;
   if (delta != 0) {
-#if defined(SUPPORT_RP_PICO)
-    q->pos_offset += delta;
-#endif
+    shiftQueuePosition(q, delta);
     _rg.advanceTargetPosition(delta);
   }
   fasEnableInterrupts();
