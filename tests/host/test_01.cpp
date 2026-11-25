@@ -105,11 +105,44 @@ void end_pos_test() {
   assert(1 == s.getPositionAfterCommandsCompleted());
 }
 
+void queued_time_test() {
+  init_queue();
+  StepperMotion s;
+  s.init(NULL, 0, 0);
+  test(s.ticksInQueue() == 0 && !s.hasTicksInQueue(1),
+       "An empty queue has no pending time");
+
+  constexpr uint16_t command_ticks = MIN_CMD_TICKS;
+  constexpr uint32_t move_ticks = 2UL * command_ticks;
+  const struct stepper_command_s move = {command_ticks, 2, true};
+  const struct stepper_command_s pause = {command_ticks, 0, true};
+  assert(s.addQueueEntry(&move, false) == AQE_OK);
+  assert(!s.isQueueRunning());
+  assert(s.queueEntries() == 1);
+  const uint32_t buffered_ticks = s.ticksInQueue();
+  const bool has_move_ticks = s.hasTicksInQueue(move_ticks);
+  printf("Prefilled move: %lu ticks, reaches threshold: %d\n",
+         (unsigned long)buffered_ticks, has_move_ticks);
+  test(buffered_ticks == move_ticks, "Prefilled head contributes its full time");
+  test(has_move_ticks, "Prefilled head satisfies the duration threshold");
+
+  assert(s.addQueueEntry(&pause, false) == AQE_OK);
+  const uint32_t total_ticks = move_ticks + command_ticks;
+  test(s.ticksInQueue() == total_ticks && s.hasTicksInQueue(total_ticks),
+       "A prefilled move and pause both contribute time");
+  assert(s.addQueueEntry(NULL, true) == AQE_OK);
+  assert(s.isQueueRunning());
+  test(s.ticksInQueue() == command_ticks && s.hasTicksInQueue(command_ticks) &&
+           !s.hasTicksInQueue(command_ticks + 1),
+       "Once running, only commands behind the active head contribute time");
+}
+
 int main() {
   // assert(sizeof(struct queue_entry) == 6);
   basic_test();
   queue_out_of_range();
   queue_full();
   end_pos_test();
+  queued_time_test();
   printf("TEST_01 PASSED\n");
 }
