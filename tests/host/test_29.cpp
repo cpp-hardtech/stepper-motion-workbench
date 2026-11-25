@@ -375,10 +375,13 @@ static void t_retry() {
   test(plan.pump() == TimedStatus::Running, "faulting pump still running");
   test(x.queueEntries() == 1, "X took its command");
   test(y.queueEntries() == 0, "Y held the refused command");
+  test(!x.isRunning(), "prefilled X waits for Y before startup");
+  test(!y.isRunning(), "refused Y stays stopped before retry");
   test(plan.isBusy(), "held command keeps the plan busy");
 
   test(plan.pump() == TimedStatus::Running, "retry pump");
   test(y.queueEntries() == 1, "Y accepts the held command");
+  test(x.isRunning() && y.isRunning(), "retry starts both queues");
   CmdSeen cx[2];
   CmdSeen cy[2];
   test(drain_cmds(&x, cx, 2) == 1 && drain_cmds(&y, cy, 2) == 1, "one each");

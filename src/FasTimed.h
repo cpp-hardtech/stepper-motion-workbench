@@ -273,9 +273,9 @@ class FasTimed {
     return any_queue_nonempty();
   }
 
-  // Prefill with start=false, then one engine synchronizedStart. A retryable
-  // addQueueEntry stops this call; the held command is sent again on the
-  // next pump. An injected DIR pause the plan did not emit is Error.
+  // Prefill with start=false, then start all axes once each queue has data.
+  // A retryable addQueueEntry stops feeding until the next pump, which
+  // retries the held command. An unplanned DIR pause is Error.
   TimedStatus pump() {
     for (uint8_t i = 0; i < NAXES; i++) {
       if (_s[i] != NULL && _s[i]->takeStopCause() != StepperStopCause::None) {
@@ -289,19 +289,9 @@ class FasTimed {
       _underrun = true;
     }
     feed_loop();
-    if (!_error && !_kicked && any_queue_nonempty()) {
-      Stepper* active[NAXES];
-      uint8_t n_active = 0;
-      for (uint8_t i = 0; i < NAXES; i++) {
-        if (_s[i] != NULL && !_s[i]->isQueueEmpty()) {
-          active[n_active++] = _s[i];
-        }
-      }
-      AqeResultCode rc = _engine->synchronizedStart(active, n_active);
-      _kicked = n_active > 0;
-      if (rc != AqeResultCode::OK) {
-        _error = true;
-      }
+    if (!_error && !_kicked && all_registered() && !any_queue_empty()) {
+      _kicked = _engine->synchronizedStart(_s, NAXES) == AqeResultCode::OK;
+      _error = !_kicked;
     }
     if (_error) {
       return TimedStatus::Error;

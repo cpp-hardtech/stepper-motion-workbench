@@ -3289,6 +3289,38 @@ void f8_feeder() {
     }
   }
 
+  // A retry during the initial prefill must delay the synchronized start.
+  for (const bool reject_both : {false, true}) {
+    SimPort px(4000, 64), py(4000, 64);
+    FasNAxisConfig cfg;
+    FasNAxis<2, 64, SimPort, TestStepperMotionEngine> path(cfg, sim_engine);
+    test(path.addAxis(0, &px), "Startup retry registers X");
+    test(path.addAxis(1, &py), "Startup retry registers Y");
+    path.syncFromSteppers();
+    int32_t target[2] = {200, 200};
+    test(path.addWaypoint(target), "Startup retry accepts the waypoint");
+    path.endPath();
+
+    if (reject_both) {
+      px.failNext(AQE_DEVICE_NOT_READY);
+    }
+    py.failNext(AQE_DEVICE_NOT_READY);
+    const auto status = path.pump();
+    printf("FasNAxis startup retry (%s): queued=(%u,%u), running=(%d,%d)\n",
+           reject_both ? "both axes" : "Y", (unsigned)px.queueEntries(),
+           (unsigned)py.queueEntries(), px.isRunning(), py.isRunning());
+    fflush(stdout);
+    test(!px.isRunning() && !py.isRunning(),
+         "Startup retry leaves both axes stopped");
+    test(px.isQueueEmpty() == reject_both && py.isQueueEmpty(),
+         "Startup retry stages only the accepted commands");
+    test(status == PumpStatus::Running, "Startup retry keeps the path pending");
+
+    test(path.pump() == PumpStatus::Running, "Startup retry resumes the path");
+    test(px.isRunning() && py.isRunning(),
+         "Startup retry starts both axes together");
+  }
+
   // --- 8.3 room: reserve two slots, and reject too-fast steps before -------
   // addQueueEntry. A nearly-full queue must never reach QUEUE_LEN.
   {
