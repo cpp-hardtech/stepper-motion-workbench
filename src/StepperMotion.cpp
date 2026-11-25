@@ -338,29 +338,29 @@ void StepperMotion::setEnablePin(uint8_t enablePin,
   if (low_active_enables_stepper) {
     _enablePinLowActive = enablePin;
     if (enablePin != PIN_UNDEFINED) {
+      if (_enablePinHighActive == enablePin) {
+        _enablePinHighActive = PIN_UNDEFINED;
+      }
       if (enablePin & PIN_EXTERNAL_FLAG) {
         if (_engine->_externalCallForPin) {
           _engine->_externalCallForPin(enablePin, HIGH);
         }
       } else if (!mux_pin) {
         PIN_OUTPUT(enablePin, HIGH);
-        if (_enablePinHighActive == enablePin) {
-          _enablePinHighActive = PIN_UNDEFINED;
-        }
       }
     }
   } else {
     _enablePinHighActive = enablePin;
     if (enablePin != PIN_UNDEFINED) {
+      if (_enablePinLowActive == enablePin) {
+        _enablePinLowActive = PIN_UNDEFINED;
+      }
       if (enablePin & PIN_EXTERNAL_FLAG) {
         if (_engine->_externalCallForPin) {
           _engine->_externalCallForPin(enablePin, LOW);
         }
       } else if (!mux_pin) {
         PIN_OUTPUT(enablePin, LOW);
-        if (_enablePinLowActive == enablePin) {
-          _enablePinLowActive = PIN_UNDEFINED;
-        }
       }
     }
   }

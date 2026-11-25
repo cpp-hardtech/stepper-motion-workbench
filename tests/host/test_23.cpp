@@ -91,9 +91,15 @@ static bool mock_external_callback(uint8_t pin, uint8_t value) {
 }
 
 static bool external_enable_callback_called = false;
+static unsigned external_enable_writes = 0;
+static uint8_t last_external_enable_pin = 0;
+static uint8_t last_external_enable_level = 0;
 
 static bool mock_external_enable_callback(uint8_t pin, uint8_t value) {
   external_enable_callback_called = true;
+  external_enable_writes++;
+  last_external_enable_pin = pin;
+  last_external_enable_level = value;
   return value;
 }
 
@@ -519,6 +525,48 @@ static void test_external_enable_pin_disable() {
   test_result("External enable pin disable", external_enable_callback_called);
 }
 
+static void test_external_enable_pin_reconfiguration() {
+  const bool polarities[] = {false, true};
+  for (bool low_active : polarities) {
+    init_queue();
+    StepperMotionEngine engine;
+    engine.init();
+    engine.setExternalCallForPin(mock_external_enable_callback);
+
+    StepperMotion* s = engine.stepperConnectToPin(0);
+    assert(s != NULL);
+    s->setEnablePin(EXTERNAL_ENABLE_PIN, !low_active);
+    s->setEnablePin(EXTERNAL_ENABLE_PIN, low_active);
+
+    const uint8_t active_level = low_active ? LOW : HIGH;
+    const uint8_t inactive_level = low_active ? HIGH : LOW;
+    const uint8_t low_pin = low_active ? EXTERNAL_ENABLE_PIN : PIN_UNDEFINED;
+    const uint8_t high_pin = low_active ? PIN_UNDEFINED : EXTERNAL_ENABLE_PIN;
+    const bool polarity_ok = s->getEnablePinLowActive() == low_pin &&
+                             s->getEnablePinHighActive() == high_pin;
+
+    external_enable_writes = 0;
+    const bool enabled = s->enableOutputs();
+    printf("  Enable writes: %u, final level: %u\n", external_enable_writes,
+           static_cast<unsigned>(last_external_enable_level));
+    const bool enable_ok = enabled && external_enable_writes == 1 &&
+                           last_external_enable_pin == EXTERNAL_ENABLE_PIN &&
+                           last_external_enable_level == active_level;
+
+    external_enable_writes = 0;
+    const bool disabled = s->disableOutputs();
+    printf("  Disable writes: %u, final level: %u\n", external_enable_writes,
+           static_cast<unsigned>(last_external_enable_level));
+    const bool disable_ok = disabled && external_enable_writes == 1 &&
+                            last_external_enable_pin == EXTERNAL_ENABLE_PIN &&
+                            last_external_enable_level == inactive_level;
+
+    test_result(low_active ? "Reconfigured external enable pin is low-active"
+                           : "Reconfigured external enable pin is high-active",
+                polarity_ok && enable_ok && disable_ok);
+  }
+}
+
 static void test_queue_ticks_tracking() {
   printf("Running: Queue ticks tracking\n");
   init_queue();
@@ -635,6 +683,7 @@ int main() {
   puts("\n=== Part 4: External Enable Pin ===");
   test_external_enable_pin_callback();
   test_external_enable_pin_disable();
+  test_external_enable_pin_reconfiguration();
 
   puts("\n=== Part 5: Integration ===");
   test_queue_ticks_tracking();
