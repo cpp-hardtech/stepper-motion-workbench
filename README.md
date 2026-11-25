@@ -53,8 +53,10 @@ Arduino project, install this checkout as a local library named
   driver queue and manages steppers.
 - [StepperMotion](src/StepperMotion.h) sets speed and acceleration, starts
   point-to-point and continuous moves, and queues step or pause commands.
-- [FasTimed](src/FasTimed.h) queues coordinated segments with caller-supplied
-  timing. [FasNAxis](src/FasNAxis.h) plans coordinated motion along waypoints.
+- [FasTimed](src/FasTimed.h) queues coordinated deltas, absolute waypoints,
+  and shared dwells. It can require exact tick durations and report the
+  committed duration of long streams. [FasNAxis](src/FasNAxis.h) plans
+  coordinated motion along waypoints.
 - [Examples](examples/) include single-axis, timed, and multi-axis sketches.
   Backend availability and usable pins depend on the board and SDK.
 
