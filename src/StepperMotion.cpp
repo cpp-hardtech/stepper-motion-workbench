@@ -548,6 +548,9 @@ void StepperMotion::getCurrentSpeedInTicks(struct actual_ticks_s* speed,
 int32_t StepperMotion::getCurrentSpeedInUs(bool realtime) const {
   struct actual_ticks_s speed;
   getCurrentSpeedInTicks(&speed, realtime);
+  if (speed.ticks == 0) {
+    return 0;
+  }
   int32_t speed_in_us = speed.ticks / (TICKS_PER_S / 1000000);
   if (speed.count_up) {
     return speed_in_us;
