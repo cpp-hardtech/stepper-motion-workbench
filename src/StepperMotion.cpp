@@ -469,6 +469,22 @@ void StepperMotion::resumeCommands() { _queue()->resumeCommands(); }
 bool StepperMotion::areCommandsSuspended() const {
   return _queue()->areCommandsSuspended();
 }
+StepperQueueStatus StepperMotion::getQueueStatus() const {
+  const StepperQueue* q = _queue();
+  fasDisableInterrupts();
+  const uint8_t entries = (uint8_t)(q->next_write_idx - q->read_idx);
+  const StepperQueueStatus status{
+      .position_after_commands = q->queue_end.pos,
+      .entries = entries,
+      .free_entries = (uint8_t)(QUEUE_LEN - entries),
+      .running = q->isRunning(),
+      .ramp_active = _rg.isRampGeneratorActive(),
+      .commands_suspended = q->areCommandsSuspended(),
+      .stop_cause = getStopCause(),
+  };
+  fasEnableInterrupts();
+  return status;
+}
 void StepperMotion::forceStop() {
   StepperQueue* q = _queue();
 

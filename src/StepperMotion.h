@@ -6,6 +6,16 @@
 
 enum class ExtDirPendingState : uint8_t { None = 0xff, Low = 0, High = 1 };
 
+struct StepperQueueStatus {
+  int32_t position_after_commands;
+  uint8_t entries;
+  uint8_t free_entries;
+  bool running;
+  bool ramp_active;
+  bool commands_suspended;
+  StepperStopCause stop_cause;
+};
+
 class StepperMotion;
 
 // ### Return codes of calls to `move()` and `moveTo()`
@@ -846,6 +856,10 @@ class StepperMotion {
   bool isQueueEmpty() const;
   bool isQueueFull() const;
   bool isQueueRunning() const;
+
+  // Read queue occupancy, the queued position and motion state in one
+  // interrupt-protected snapshot. The stop cause is read without clearing it.
+  StepperQueueStatus getQueueStatus() const;
 
   // ### functions to get the fill level of the queue
   //
