@@ -31,6 +31,10 @@
 // *actual_duration carries the ticks of the one injected pause. The
 // application accumulates this value per retry and computes the drift only
 // once the move is accepted (see API documentation).
+static uint32_t timedDurationEntries(uint32_t duration) {
+  return duration / UINT16_MAX + (duration % UINT16_MAX != 0);
+}
+
 MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
                                                 uint32_t duration,
                                                 uint32_t* actual_duration,
@@ -38,24 +42,28 @@ MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
                                                 bool prepare_revert) {
   MoveTimedResultCode ret_ok =
       isQueueEmpty() ? MOVE_TIMED_EMPTY : MOVE_TIMED_OK;
+  if (actual_duration != NULL) {
+    *actual_duration = 0;
+  }
   if ((steps == 0) && (duration == 0)) {
     if (start) {
-      addQueueEntry(NULL, true);  // start the queue
+      AqeResultCode ret = addQueueEntry(NULL, true);
+      if (ret != AQE_OK) {
+        return tmrFrom(ret);
+      }
     }
     return ret_ok;
   }
   uint8_t freeEntries = QUEUE_LEN - queueEntries();
-  if (actual_duration != NULL) {
-    *actual_duration = 0;
-  }
   _queue()->_injected_pause_ticks = 0;
   bool count_up = _queue()->queue_end.count_up ^ prepare_revert;
   struct stepper_command_s cmd = {.ticks = 0, .steps = 0, .count_up = count_up};
   if (steps == 0) {
-    if ((duration >> 16) >= QUEUE_LEN) {
+    const uint32_t entries = timedDurationEntries(duration);
+    if (entries > QUEUE_LEN) {
       return MOVE_TIMED_TOO_LARGE_ERROR;
     }
-    if ((duration >> 16) >= freeEntries) {
+    if (entries > freeEntries) {
       return MOVE_TIMED_BUSY;
     }
     while (duration > 0) {
@@ -85,28 +93,18 @@ MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
     return ret_ok;
   }
 
-  // let's evaluate the direction
-  if (steps < 0) {
-    cmd.count_up = false;
-    steps = -steps;
-  } else {
-    cmd.count_up = true;
+  cmd.count_up = steps > 0;
+  uint16_t steps_left = cmd.count_up ? steps : -(int32_t)steps;
+  if (steps_left > QUEUE_LEN * 255) {
+    return MOVE_TIMED_TOO_LARGE_ERROR;
   }
 
   // There are steps to execute
   // Let's first calculate the step rate
   uint32_t rate = duration;
-  rate /= steps;
+  rate /= steps_left;
   if (rate > 65535) {
-    // we need pauses, so only few steps can be executed
-    uint16_t cmds_per_step = (rate >> 16) + 1;  // bit too small
-    if (cmds_per_step >= QUEUE_LEN) {
-      return MOVE_TIMED_TOO_LARGE_ERROR;
-    }
-    if (steps >= QUEUE_LEN) {
-      return MOVE_TIMED_TOO_LARGE_ERROR;
-    }
-    uint8_t cmds = steps * cmds_per_step;
+    const uint32_t cmds = steps_left * timedDurationEntries(rate);
     if (cmds >= QUEUE_LEN) {
       return MOVE_TIMED_TOO_LARGE_ERROR;
     }
@@ -114,7 +112,7 @@ MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
       return MOVE_TIMED_BUSY;
     }
     // Should fit into the queue.
-    for (uint8_t steps_i = 0; steps_i < steps; steps_i++) {
+    for (uint16_t steps_i = 0; steps_i < steps_left; steps_i++) {
       uint32_t this_duration = rate;
       cmd.steps = 1;
       while (this_duration) {
@@ -144,27 +142,24 @@ MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
     return ret_ok;
   }
   // Now we need to run steps at "high" speed.
-  if (steps > QUEUE_LEN * 255) {
-    return MOVE_TIMED_TOO_LARGE_ERROR;
-  }
-  if (steps > freeEntries * 255) {
+  if (steps_left > freeEntries * 255) {
     return MOVE_TIMED_BUSY;
   }
   // The steps should fit in
   cmd.ticks = rate;
   uint32_t expected_duration = rate;
-  expected_duration *= steps;
+  expected_duration *= steps_left;
   // duration must be larger than expected_duration
-  int16_t missing = duration - expected_duration;
-  while (steps > 0) {
-    if (steps > 510) {
+  uint16_t missing = duration - expected_duration;
+  while (steps_left > 0) {
+    if (steps_left > 510) {
       cmd.steps = 255;
-    } else if (steps > 255) {
-      cmd.steps = steps / 2;
+    } else if (steps_left > 255) {
+      cmd.steps = steps_left / 2;
     } else {
-      cmd.steps = steps;
+      cmd.steps = steps_left;
     }
-    if (steps <= missing) {
+    if (steps_left <= missing && cmd.ticks < UINT16_MAX) {
       // run the remaining steps bit slower to adjust for missing ticks
       cmd.ticks++;
       missing = 0;  // only increase once
@@ -181,7 +176,7 @@ MoveTimedResultCode StepperMotion::moveTimed(int16_t steps,
       d *= cmd.steps;
       *actual_duration += d;
     }
-    steps -= cmd.steps;
+    steps_left -= cmd.steps;
   }
   return ret_ok;
 }
