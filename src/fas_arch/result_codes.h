@@ -101,7 +101,8 @@ enum class MoveResultCode : int8_t {
   ErrorNoDirectionPin = -1,    // Equivalent to MOVE_ERR_NO_DIRECTION_PIN
   ErrorSpeedIsUndefined = -2,  // Equivalent to MOVE_ERR_SPEED_IS_UNDEFINED
   ErrorAccelerationIsUndefined =
-      -3  // Equivalent to MOVE_ERR_ACCELERATION_IS_UNDEFINED
+      -3,  // Equivalent to MOVE_ERR_ACCELERATION_IS_UNDEFINED
+  ErrorAccelerationOutOfRange = -4,
 };
 
 static inline bool moveIsOk(MoveResultCode status) {
@@ -118,6 +119,8 @@ static inline const char* toString(MoveResultCode code) {
       return FAS_PSTR("Error: Speed is Undefined");
     case MoveResultCode::ErrorAccelerationIsUndefined:
       return FAS_PSTR("Error: Acceleration is Undefined");
+    case MoveResultCode::ErrorAccelerationOutOfRange:
+      return FAS_PSTR("Error: Acceleration is Out of Range");
     default:
       return FAS_PSTR("Unknown Error");
   }
@@ -129,6 +132,8 @@ static inline const char* toString(MoveResultCode code) {
 #define MOVE_ERR_SPEED_IS_UNDEFINED MoveResultCode::ErrorSpeedIsUndefined
 #define MOVE_ERR_ACCELERATION_IS_UNDEFINED \
   MoveResultCode::ErrorAccelerationIsUndefined
+#define MOVE_ERR_ACCELERATION_OUT_OF_RANGE \
+  MoveResultCode::ErrorAccelerationOutOfRange
 
 // MoveTimedResultCode values 0..6 mirror AqeResultCode so that tmrFrom() is a
 // value-preserving cast; MoveBusy/MoveEmpty sit above the AQE range to avoid

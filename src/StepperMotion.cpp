@@ -372,7 +372,7 @@ void StepperMotion::setAutoEnable(bool auto_enable) {
   }
 }
 DelayResultCode StepperMotion::setDelayToEnable(uint32_t delay_us) {
-  uint32_t delay_ticks = US_TO_TICKS(delay_us);
+  const uint64_t delay_ticks = (uint64_t)delay_us * TICKS_PER_S / 1000000;
   if (delay_ticks > 0) {
     if (delay_ticks < MIN_CMD_TICKS) {
       return DELAY_TOO_LOW;
@@ -393,8 +393,22 @@ void StepperMotion::setDelayToDisable(uint16_t delay_ms) {
   _off_delay_count = fas_max(delay_count, (uint16_t)1);
 }
 MoveResultCode StepperMotion::runForward() { return _rg.startRun(true); }
-MoveResultCode StepperMotion::runBackward() { return _rg.startRun(false); }
+MoveResultCode StepperMotion::runBackward() {
+  if (_dirPin == PIN_UNDEFINED) {
+    return MOVE_ERR_NO_DIRECTION_PIN;
+  }
+  return _rg.startRun(false);
+}
 MoveResultCode StepperMotion::moveTo(int32_t position, bool blocking) {
+  if (_dirPin == PIN_UNDEFINED) {
+    fasDisableInterrupts();
+    const uint32_t queued = _queue()->queue_end.pos;
+    fasEnableInterrupts();
+    const uint32_t distance = (uint32_t)position - queued;
+    if (distance > (uint32_t)INT32_MAX) {
+      return MOVE_ERR_NO_DIRECTION_PIN;
+    }
+  }
   MoveResultCode res = _rg.moveTo(position, &_queue()->queue_end);
   if ((res == MOVE_OK) && blocking) {
     while (isRunning()) {
@@ -425,6 +439,9 @@ void StepperMotion::applySpeedAcceleration() {
 }
 MoveResultCode StepperMotion::moveByAcceleration(int32_t acceleration,
                                                     bool allow_reverse) {
+  if (acceleration == INT32_MIN) {
+    return MOVE_ERR_ACCELERATION_OUT_OF_RANGE;
+  }
   MoveResultCode res = MOVE_OK;
   if (acceleration > 0) {
     setAcceleration(acceleration);
@@ -558,7 +575,7 @@ int32_t StepperMotion::getCurrentSpeedInMilliHz(bool realtime) const {
   struct actual_ticks_s speed;
   getCurrentSpeedInTicks(&speed, realtime);
   if (speed.ticks > 0) {
-    int32_t speed_in_mhz = ((uint32_t)250 * TICKS_PER_S) / speed.ticks * 4;
+    int32_t speed_in_mhz = (1000ULL * TICKS_PER_S) / speed.ticks;
     if (speed.count_up) {
       return speed_in_mhz;
     }
@@ -581,7 +598,7 @@ uint32_t StepperMotion::getMaxSpeedInHz() const {
 }
 uint32_t StepperMotion::getMaxSpeedInMilliHz() const {
   uint16_t ticks = getMaxSpeedInTicks();
-  uint32_t speed_in_milli_hz = ((uint32_t)250 * TICKS_PER_S) / ticks * 4;
+  uint32_t speed_in_milli_hz = (1000ULL * TICKS_PER_S) / ticks;
   return speed_in_milli_hz;
 }
 #if defined(SUPPORT_UNSAFE_ABS_SPEED_LIMIT_SETTING)
@@ -600,10 +617,10 @@ int8_t StepperMotion::setSpeedInTicks(uint32_t min_step_ticks) {
   return 0;
 }
 int8_t StepperMotion::setSpeedInUs(uint32_t min_step_us) {
-  if (min_step_us >= TICKS_TO_US(0xffffffff)) {
+  const uint64_t min_step_ticks = (uint64_t)min_step_us * TICKS_PER_S / 1000000;
+  if (min_step_ticks >= TICKS_FOR_STOPPED_MOTOR) {
     return -1;
   }
-  uint32_t min_step_ticks = US_TO_TICKS(min_step_us);
   return setSpeedInTicks(min_step_ticks);
 }
 int8_t StepperMotion::setSpeedInHz(uint32_t speed_hz) {
@@ -614,10 +631,13 @@ int8_t StepperMotion::setSpeedInHz(uint32_t speed_hz) {
   return setSpeedInTicks(ticks);
 }
 int8_t StepperMotion::setSpeedInMilliHz(uint32_t speed_mhz) {
-  if (speed_mhz <= (1000LL * TICKS_PER_S / 0xffffffff + 1)) {
+  if (speed_mhz == 0) {
     return -1;
   }
-  uint32_t ticks = _rg.divForMilliHz(speed_mhz);
+  const uint64_t ticks = _rg.divForMilliHz(speed_mhz);
+  if (ticks >= TICKS_FOR_STOPPED_MOTOR) {
+    return -1;
+  }
   return setSpeedInTicks(ticks);
 }
 void StepperMotion::setCurrentPosition(int32_t new_pos) {
