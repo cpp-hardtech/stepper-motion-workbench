@@ -296,10 +296,9 @@ class FasNAxis {
   // Plan and feed the committed Linear path (section 10.4). Prefill every axis
   // with start=false, then kick off with the engine's synchronized start
   // (StepperMotionEngine::synchronizedStart()): all active queues are
-  // released in one engine operation instead of one addQueueEntry(NULL, true)
-  // per axis. Later commands use start=true. An empty queue during prefill is
-  // expected and is not underrun; after kick-off an empty queue while the plan
-  // still moves is underrun (section 10.5).
+  // released in one engine operation once each queue has data. Later commands
+  // use start=true. An empty queue during prefill is expected; after kick-off
+  // an empty queue while the plan still moves is underrun (section 10.5).
   PumpStatus pump() {
     // An external stop of a member axis (manual stopMove, forceStop, e-stop)
     // invalidates the coordinated plan: abort and report Stopped. Positions
@@ -315,21 +314,6 @@ class FasNAxis {
     }
     if (!_feeding && _head < _n_blk) {
       feeder_start();
-      feed_loop();
-      if (!_error) {
-        Stepper* active[NAXES];
-        uint8_t n_active = 0;
-        for (uint8_t i = 0; i < NAXES; i++) {
-          if (_registered[i] && !_s[i]->isQueueEmpty()) {
-            active[n_active++] = _s[i];
-          }
-        }
-        AqeResultCode rc = _engine->synchronizedStart(active, n_active);
-        _kicked_off = (n_active > 0);
-        if (rc != AqeResultCode::OK) {
-          _error = true;
-        }
-      }
     }
     if (!_error && _kicked_off && !_done) {
       for (uint8_t i = 0; i < NAXES; i++) {
@@ -339,14 +323,18 @@ class FasNAxis {
       }
     }
     feed_loop();
+    if (!_error && _feeding && !_kicked_off) {
+      start_prefilled_queues();
+    }
     if (_error) {
       return PumpStatus::Error;
     }
     if (_underrun) {
       return PumpStatus::Underrun;
     }
-    if (_done && !any_queue_nonempty()) {
+    if (_done && !any_waiting() && !any_queue_nonempty()) {
       _feeding = false;
+      _kicked_off = false;
       _n_blk = 0;
       _head = 0;
       _path_closed = false;
@@ -360,7 +348,7 @@ class FasNAxis {
   }
 
   bool isBusy() const {
-    if (_head < _n_blk || !_done) {
+    if (_head < _n_blk || !_done || any_waiting()) {
       return true;
     }
     return any_queue_nonempty();
@@ -467,6 +455,25 @@ class FasNAxis {
   int pendingBlocks() const { return _n_blk - _head; }
 
  private:
+  void start_prefilled_queues() {
+    Stepper* active[NAXES];
+    uint8_t n_active = 0;
+    for (uint8_t i = 0; i < NAXES; i++) {
+      if (!_registered[i]) {
+        continue;
+      }
+      if (_s[i]->isQueueEmpty()) {
+        return;
+      }
+      active[n_active++] = _s[i];
+    }
+    if (n_active != 0) {
+      _kicked_off =
+          _engine->synchronizedStart(active, n_active) == AqeResultCode::OK;
+      _error = !_kicked_off;
+    }
+  }
+
   bool any_queue_nonempty() const {
     for (uint8_t i = 0; i < NAXES; i++) {
       if (_registered[i] && !_s[i]->isQueueEmpty()) {
