@@ -137,6 +137,64 @@ void queued_time_test() {
        "Once running, only commands behind the active head contribute time");
 }
 
+void pending_queue_tail_test() {
+  init_queue();
+  StepperMotion x;
+  StepperMotion y;
+  x.init(nullptr, 0, 0);
+  y.init(nullptr, 1, 1);
+  x.setDirectionPin(4);
+  y.setDirectionPin(5);
+
+  const stepper_command_s move{3200, 2, false};
+  const stepper_command_s pause{6400, 0, false};
+  stepper_command_s tail{4800, 7, true};
+  const bool empty_has_tail = x.getLastPendingCommand(tail);
+  const bool empty_preserves_tail =
+      tail.ticks == 4800 && tail.steps == 7 && tail.count_up;
+
+  fas_queue[0].read_idx = UINT8_MAX;
+  fas_queue[0].next_write_idx = UINT8_MAX;
+  assert(x.addQueueEntry(&move, false) == AQE_OK);
+  const bool wrapped_has_tail = x.getLastPendingCommand(tail);
+  const bool wrapped_matches_move =
+      tail.ticks == move.ticks && tail.steps == move.steps && !tail.count_up;
+  assert(x.addQueueEntry(&pause, false) == AQE_OK);
+  assert(y.addQueueEntry(&pause, false) == AQE_OK);
+  assert(y.addQueueEntry(&move, false) == AQE_OK);
+  const auto x_status = x.getQueueStatus();
+  const auto y_status = y.getQueueStatus();
+  printf("Prefilled move/pause vs pause/move: entries %u/%u, position %ld/%ld,"
+         " pending ticks %lu/%lu, ramp periods %lu/%lu\n",
+         x_status.entries, y_status.entries,
+         (long)x_status.position_after_commands,
+         (long)y_status.position_after_commands, (unsigned long)x.ticksInQueue(),
+         (unsigned long)y.ticksInQueue(),
+         (unsigned long)x.getPeriodInTicksAfterCommandsCompleted(),
+         (unsigned long)y.getPeriodInTicksAfterCommandsCompleted());
+
+  test(!empty_has_tail && empty_preserves_tail,
+       "Empty queue leaves the caller's command untouched");
+  test(wrapped_has_tail && wrapped_matches_move,
+       "Prefilled move is visible across the write index wrap");
+  test(x.getLastPendingCommand(tail) && tail.ticks == pause.ticks &&
+           tail.steps == 0 && !tail.count_up,
+       "Idle queue tail preserves the pause duration and direction");
+  test(y.getLastPendingCommand(tail) && tail.ticks == move.ticks &&
+           tail.steps == move.steps && !tail.count_up,
+       "Identical queue totals can have a different tail command");
+
+  assert(x.addQueueEntry(nullptr, true) == AQE_OK);
+  test(x.getLastPendingCommand(tail) && tail.ticks == pause.ticks &&
+           tail.steps == 0 && !tail.count_up,
+       "Running queue reports its last waiting command");
+  // Complete the head move in the host queue. The remaining pause is active.
+  ++fas_queue[0].read_idx;
+  test(!x.getLastPendingCommand(tail) && tail.ticks == pause.ticks &&
+           tail.steps == 0 && !tail.count_up,
+       "The active command alone is not pending and leaves output untouched");
+}
+
 int main() {
   // assert(sizeof(struct queue_entry) == 6);
   basic_test();
@@ -144,5 +202,6 @@ int main() {
   queue_full();
   end_pos_test();
   queued_time_test();
+  pending_queue_tail_test();
   printf("TEST_01 PASSED\n");
 }

@@ -861,6 +861,11 @@ class StepperMotion {
   // interrupt-protected snapshot. The stop cause is read without clearing it.
   StepperQueueStatus getQueueStatus() const;
 
+  // Copy the last pending software queue command, including pauses. Like
+  // ticksInQueue(), this includes prefilled commands and skips the active
+  // head when running. Returns false and leaves command unchanged if none wait.
+  bool getLastPendingCommand(stepper_command_s& command) const;
+
   // ### functions to get the fill level of the queue
   //
   // To retrieve the forward planning time in the queue, ticksInQueue()
