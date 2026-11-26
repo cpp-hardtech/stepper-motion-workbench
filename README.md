@@ -53,6 +53,8 @@ Arduino project, install this checkout as a local library named
   driver queue and manages steppers.
 - [StepperMotion](src/StepperMotion.h) sets speed and acceleration, starts
   point-to-point and continuous moves, and queues step or pause commands.
+  `getLastPendingCommand()` reads the period, step count, and direction of
+  the tail command still waiting in the software queue.
 - [FasTimed](src/FasTimed.h) queues coordinated deltas, absolute waypoints,
   and shared dwells. It can require exact tick durations and report the
   committed duration of long streams. [FasNAxis](src/FasNAxis.h) plans

@@ -485,6 +485,22 @@ StepperQueueStatus StepperMotion::getQueueStatus() const {
   fasEnableInterrupts();
   return status;
 }
+
+bool StepperMotion::getLastPendingCommand(stepper_command_s& command) const {
+  const StepperQueue* q = _queue();
+  fasDisableInterrupts();
+  const uint8_t write_idx = q->next_write_idx;
+  const uint8_t entries = (uint8_t)(write_idx - q->read_idx);
+  const bool has_pending = entries > (q->isRunning() ? 1 : 0);
+  if (has_pending) {
+    const uint8_t tail_idx = write_idx - 1;
+    const auto& tail = q->entry[tail_idx & QUEUE_LEN_MASK];
+    command = {tail.ticks, tail.steps, tail.countUp != 0};
+  }
+  fasEnableInterrupts();
+  return has_pending;
+}
+
 void StepperMotion::forceStop() {
   StepperQueue* q = _queue();
 
