@@ -80,6 +80,50 @@ void exact_ticks_are_never_changed() {
         "a representable exact span keeps both axes on the requested clock");
 }
 
+void absolute_waypoints_can_require_exact_ticks() {
+  const int32_t origin[2] = {100, -50};
+  const int32_t target[2] = {110, -50};
+
+  Fixture<> rounded;
+  rounded.plan.setCurrentPosition(origin);
+  const auto rounded_result = rounded.plan.addWaypoint(target, 20001);
+  rounded.plan.pump();
+  rounded.x.drain();
+  rounded.y.drain();
+  printf("rounded absolute target: rc=%d emitted=(%" PRIu32 ",%" PRIu32 ")\n",
+         static_cast<int>(rounded_result), rounded.x.clock(), rounded.y.clock());
+  check(rounded_result == TimedAdd::Ok &&
+            rounded.x.clock() == 20000 && rounded.y.clock() == 20000,
+        "roundable absolute waypoint uses the nearest legal duration");
+
+  Fixture<1> strict;
+  strict.plan.setCurrentPosition(origin);
+  const int32_t out_of_range[2] = {110, INT32_MAX};
+  check(strict.plan.addWaypointExact(out_of_range, 20000) == TimedAdd::Rejected,
+        "exact absolute waypoint retains per-axis displacement limits");
+  const auto unrepresentable = strict.plan.addWaypointExact(target, 20001);
+  check(unrepresentable == TimedAdd::TimingNotAchievable &&
+            strict.plan.plannedPosition(0) == origin[0] &&
+            strict.plan.plannedPosition(1) == origin[1] &&
+            strict.plan.actualTicks64() == 0 && !strict.plan.isBusy(),
+        "rejecting an exact absolute waypoint leaves the whole plan untouched");
+
+  const auto exact = strict.plan.addWaypointExact(target, 20000);
+  strict.plan.pump();
+  strict.x.drain();
+  strict.y.drain();
+  printf("exact absolute target: rc=%d/%d emitted=(%" PRIu32 ",%" PRIu32 ")\n",
+         static_cast<int>(unrepresentable), static_cast<int>(exact),
+         strict.x.clock(), strict.y.clock());
+  check(exact == TimedAdd::Ok &&
+            strict.plan.plannedPosition(0) == target[0] &&
+            strict.plan.plannedPosition(1) == target[1] &&
+            strict.plan.actualTicks64() == 20000 &&
+            strict.x.position() == 10 && strict.y.position() == 0 &&
+            strict.x.clock() == 20000 && strict.y.clock() == 20000,
+        "exact absolute waypoint emits the requested displacement and clock");
+}
+
 void long_dwell_is_admitted_as_a_unit() {
   Fixture<2> f;
   check(f.plan.addDwellTicks(3200) == TimedAdd::Ok, "one dwell fits in the horizon");
@@ -130,6 +174,7 @@ void time_accounting_tracks_long_streams() {
 int main() {
   absolute_waypoints_use_the_planned_coordinates();
   exact_ticks_are_never_changed();
+  absolute_waypoints_can_require_exact_ticks();
   long_dwell_is_admitted_as_a_unit();
   time_accounting_tracks_long_streams();
   return failures != 0;
