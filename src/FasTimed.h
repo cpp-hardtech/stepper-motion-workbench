@@ -42,9 +42,9 @@ enum class TimedStatus : uint8_t {
 // The feeder emits one or two addQueueEntry commands per axis whose tick
 // sums are equal. When the requested duration is not an exact legal command
 // split, the shared sum moves to the nearest duration that is, and no
-// farther than the longest |delta| of the call. addDeltaExact() requires the
-// requested duration to be representable. actualTicks64() reports the total
-// issued duration for the plan.
+// farther than the longest |delta| of the call. addDeltaExact() and
+// addWaypointExact() require the requested duration to be representable.
+// actualTicks64() reports the total issued duration for the plan.
 //
 // HORIZON is only the number of chunks waiting to be queued. Each chunk is
 // already one command, so the ring stays small (default 8). A longer path
@@ -127,15 +127,12 @@ class FasTimed {
   // Queue an absolute waypoint relative to the last committed position.
   // The same per-axis travel and timing limits as addDelta() apply.
   TimedAdd addWaypoint(const int32_t position[NAXES], uint16_t ticks) {
-    int16_t steps[NAXES];
-    for (uint8_t i = 0; i < NAXES; ++i) {
-      const int64_t delta = (int64_t)position[i] - _p[i];
-      if (delta < -128 || delta > 128) {
-        return TimedAdd::Rejected;
-      }
-      steps[i] = delta;
-    }
-    return addDelta(steps, ticks);
+    return appendWaypoint(position, ticks, false);
+  }
+
+  // Queue an absolute waypoint only when every axis can emit exactly ticks.
+  TimedAdd addWaypointExact(const int32_t position[NAXES], uint16_t ticks) {
+    return appendWaypoint(position, ticks, true);
   }
 
   // Queue a shared dwell at rest. The whole duration must fit in the free
@@ -173,6 +170,19 @@ class FasTimed {
   }
 
  private:
+  TimedAdd appendWaypoint(const int32_t position[NAXES], uint16_t ticks,
+                          bool exact) {
+    int16_t steps[NAXES];
+    for (uint8_t i = 0; i < NAXES; ++i) {
+      const int64_t delta = (int64_t)position[i] - _p[i];
+      if (delta < -128 || delta > 128) {
+        return TimedAdd::Rejected;
+      }
+      steps[i] = delta;
+    }
+    return appendDelta(steps, ticks, exact);
+  }
+
   TimedAdd appendDelta(const int16_t steps[NAXES], uint16_t ticks, bool exact) {
     if (_fault || _error || !_synced || !all_registered()) {
       return TimedAdd::Rejected;
