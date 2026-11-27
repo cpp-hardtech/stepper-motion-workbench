@@ -68,5 +68,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the license and source
-attribution, including the Teensy timer code.
+MIT. See [LICENSE](LICENSE)
