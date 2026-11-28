@@ -19,8 +19,8 @@ class StepperMotionEngine;
 // one.
 enum class TimedAdd : uint8_t { Ok = 0, Rejected = 1, TimingNotAchievable = 2 };
 
-// Result of FasTimed::pump. Underrun latches until syncFromSteppers /
-// setCurrentPosition. Stopped latches the same way after an external stop.
+// Result of FasTimed::pump() and FasTimed::status(). Underrun and Stopped
+// latch until syncFromSteppers() or setCurrentPosition().
 enum class TimedStatus : uint8_t {
   Idle = 0,
   Running = 1,
@@ -303,17 +303,26 @@ class FasTimed {
       _kicked = _engine->synchronizedStart(_s, NAXES) == AqeResultCode::OK;
       _error = !_kicked;
     }
+    const TimedStatus result = status();
+    if (result == TimedStatus::Idle) {
+      _kicked = false;
+    }
+    return result;
+  }
+
+  // Observe staged work, axis queues, and conditions already detected by pump().
+  // Call pump() to feed commands and detect new conditions.
+  TimedStatus status() const {
+    if (_fault) {
+      return TimedStatus::Stopped;
+    }
     if (_error) {
       return TimedStatus::Error;
     }
     if (_underrun) {
       return TimedStatus::Underrun;
     }
-    if (_count == 0 && !any_waiting() && !any_queue_nonempty()) {
-      _kicked = false;
-      return TimedStatus::Idle;
-    }
-    return TimedStatus::Running;
+    return isBusy() ? TimedStatus::Running : TimedStatus::Idle;
   }
 
  private:

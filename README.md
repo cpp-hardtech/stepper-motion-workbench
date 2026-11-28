@@ -62,6 +62,10 @@ Arduino project, install this checkout as a local library named
 - [Examples](examples/) include single-axis, timed, and multi-axis sketches.
   Backend availability and usable pins depend on the board and SDK.
 
+Use `FasTimed::status()` for read-only monitoring of staged work, axis queues,
+and latched stop, error, or underrun states. Call `pump()` to feed the queues and
+detect new events.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
