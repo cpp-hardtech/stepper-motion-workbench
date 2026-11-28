@@ -378,6 +378,7 @@ static void t_retry() {
   test(!x.isRunning(), "prefilled X waits for Y before startup");
   test(!y.isRunning(), "refused Y stays stopped before retry");
   test(plan.isBusy(), "held command keeps the plan busy");
+  test(plan.status() == TimedStatus::Running, "status includes held commands");
 
   test(plan.pump() == TimedStatus::Running, "retry pump");
   test(y.queueEntries() == 1, "Y accepts the held command");
@@ -415,8 +416,10 @@ static void t_underrun() {
     x.drain();
     y.drain();
   }
+  test(plan.status() == TimedStatus::Running, "pump detects the new underrun");
   st = plan.pump();
   test(st == TimedStatus::Underrun, "empty queue with chunks left");
+  test(plan.status() == TimedStatus::Underrun, "status reports underrun");
   // Underrun latches, but the feeder keeps filling.
   for (int i = 0; i < 4 && plan.isBusy(); i++) {
     x.drain();
@@ -426,6 +429,10 @@ static void t_underrun() {
   test(x.getCurrentPosition() == 8 && y.getCurrentPosition() == 8,
        "underrun still delivers every step");
   test(x.clock() == y.clock() && x.clock() == 64000, "underrun clocks");
+  test(!plan.isBusy() && plan.status() == TimedStatus::Underrun,
+       "status retains underrun after both queues drain");
+  plan.syncFromSteppers();
+  test(plan.status() == TimedStatus::Idle, "sync clears underrun status");
 }
 
 static void t_horizon() {
@@ -435,12 +442,19 @@ static void t_horizon() {
   plan.addAxis(0, &x);
   plan.syncFromSteppers();
   int16_t z = 0;
+  const auto& monitor = plan;
+  test(monitor.status() == TimedStatus::Idle, "empty planner reports idle");
   expect_add(plan.addDelta(&z, 3200), TimedAdd::Ok, "horizon 0");
   expect_add(plan.addDelta(&z, 3200), TimedAdd::Ok, "horizon 1");
   expect_add(plan.addDelta(&z, 3200), TimedAdd::Rejected, "horizon full");
   test(plan.actualTicks() == 6400, "full ring did not take the third");
+  test(monitor.status() == TimedStatus::Running, "staged work reports running");
+  test(monitor.status() == TimedStatus::Running, "repeated status is stable");
+  test(x.queueEntries() == 0 && !x.isRunning(), "status leaves the axis idle");
   plan.pump();
+  test(monitor.status() == TimedStatus::Running, "queued work reports running");
   x.drain();
+  test(monitor.status() == TimedStatus::Idle, "status sees the drained queue");
   test(plan.pump() == TimedStatus::Idle, "horizon drained");
   expect_add(plan.addDelta(&z, 3200), TimedAdd::Ok, "ring slides");
   test(plan.actualTicks() == 9600, "committed sum keeps the drained dwells");
@@ -455,12 +469,15 @@ static void t_stop_and_inject() {
   int16_t d = 2;
   expect_add(plan.addDelta(&d, 16000), TimedAdd::Ok, "stop setup");
   x.setStopCause(StepperStopCause::ForceStop);
+  test(plan.status() == TimedStatus::Running, "pump checks the pending stop");
   test(plan.pump() == TimedStatus::Stopped, "external stop");
+  test(plan.status() == TimedStatus::Stopped, "status reports the latched stop");
   test(plan.pump() == TimedStatus::Stopped, "stop latches");
   expect_add(plan.addDelta(&d, 16000), TimedAdd::Rejected,
              "no add while stopped");
   plan.syncFromSteppers();
   int16_t z = 0;
+  test(plan.status() == TimedStatus::Idle, "sync clears stopped status");
   expect_add(plan.addDelta(&z, 3200), TimedAdd::Ok, "sync clears the stop");
 
   SimPort y(500, 64);
@@ -475,6 +492,7 @@ static void t_stop_and_inject() {
   expect_add(rev.addDelta(&a, 24000), TimedAdd::Ok, "inject decel");
   expect_add(rev.addDelta(&back, 16000), TimedAdd::Ok, "inject reverse");
   test(rev.pump() == TimedStatus::Error, "unplanned DIR pause is Error");
+  test(rev.status() == TimedStatus::Error, "status reports the latched error");
 }
 
 // A square streamed through a ring of 8 chunks. The pitch ladder is

@@ -64,6 +64,10 @@ Arduino project, install this checkout as a local library named
 
 ## API
 
+Use `FasTimed::status()` for read-only monitoring of staged work, axis queues,
+and latched stop, error, or underrun states. Call `pump()` to feed the queues and
+detect new events.
+
 - [StepperMotionEngine](src/StepperMotionEngine.h) binds a STEP output to a
   driver queue and manages steppers.
 - [StepperMotion](src/StepperMotion.h) sets speed and acceleration, starts
