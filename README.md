@@ -58,7 +58,9 @@ Arduino project, install this checkout as a local library named
 - [FasTimed](src/FasTimed.h) queues coordinated deltas, absolute waypoints,
   and shared dwells. Use `addDeltaExact()` or `addWaypointExact()` to require exact
   tick durations, and `actualTicks64()` to report the committed duration of long
-  streams. [FasNAxis](src/FasNAxis.h) plans coordinated motion along waypoints.
+  streams. Use `availableChunks()` to check how many planner slots are free before
+  refilling a stream. [FasNAxis](src/FasNAxis.h) plans coordinated motion along
+  waypoints.
 - [Examples](examples/) include single-axis, timed, and multi-axis sketches.
   Backend availability and usable pins depend on the board and SDK.
 
