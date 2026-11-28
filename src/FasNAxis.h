@@ -455,6 +455,16 @@ class FasNAxis {
   // Number of blocks committed but not yet fully executed.
   int pendingBlocks() const { return _n_blk - _head; }
 
+  // Absolute coordinate of the last accepted waypoint, in steps. Syncing or
+  // setting the current position establishes a new endpoint. An out-of-range
+  // axis returns zero.
+  int32_t plannedPosition(uint8_t i) const {
+    if (i >= NAXES) {
+      return 0;
+    }
+    return _p[i];
+  }
+
  private:
   void start_prefilled_queues() {
     Stepper* active[NAXES];
