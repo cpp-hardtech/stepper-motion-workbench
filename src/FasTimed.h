@@ -19,8 +19,8 @@ class StepperMotionEngine;
 // one.
 enum class TimedAdd : uint8_t { Ok = 0, Rejected = 1, TimingNotAchievable = 2 };
 
-// Result of FasTimed::pump. Underrun latches until syncFromSteppers /
-// setCurrentPosition. Stopped latches the same way after an external stop.
+// Result of FasTimed::pump() and FasTimed::status(). Underrun and Stopped
+// latch until syncFromSteppers() or setCurrentPosition().
 enum class TimedStatus : uint8_t {
   Idle = 0,
   Running = 1,
@@ -46,9 +46,9 @@ enum class TimedStatus : uint8_t {
 // addWaypointExact() require the requested duration to be representable.
 // actualTicks64() reports the total issued duration for the plan.
 //
-// HORIZON is only the number of chunks waiting to be queued. Each chunk is
-// already one command, so the ring stays small (default 8). A longer path
-// streams: addDelta until it returns Rejected, pump, and add again.
+// HORIZON is the number of chunks the planner can stage (default 8). To stream
+// a longer path, pump the axis queues and check availableChunks() before
+// appending more chunks.
 template <uint8_t NAXES, uint16_t HORIZON = 8,
           typename Stepper = StepperMotion,
           typename Engine = StepperMotionEngine>
@@ -145,7 +145,7 @@ class FasTimed {
       return TimedAdd::Ok;
     }
     uint32_t chunks = 1 + (ticks - 1) / UINT16_MAX;
-    if (ticks < MIN_CMD_TICKS || chunks > (uint32_t)(HORIZON - _count)) {
+    if (ticks < MIN_CMD_TICKS || chunks > availableChunks()) {
       return TimedAdd::Rejected;
     }
     for (uint8_t i = 0; i < NAXES; ++i) {
@@ -207,7 +207,7 @@ class FasTimed {
         sign[i] = 0;
       }
     }
-    if (_count >= HORIZON) {
+    if (availableChunks() == 0) {
       return TimedAdd::Rejected;
     }
     if (!speed_ok(mag, ticks)) {
@@ -276,6 +276,10 @@ class FasTimed {
   // 32-bit view for clients that track the sum modulo 2^32.
   uint32_t actualTicks() const { return (uint32_t)_actual; }
 
+  // Free slots in the planner's staging buffer. Each chunk holds its slot
+  // until all of its commands are queued on every axis.
+  uint16_t availableChunks() const { return HORIZON - _count; }
+
   bool isBusy() const {
     if (_count > 0 || any_waiting()) {
       return true;
@@ -303,17 +307,26 @@ class FasTimed {
       _kicked = _engine->synchronizedStart(_s, NAXES) == AqeResultCode::OK;
       _error = !_kicked;
     }
+    const TimedStatus result = status();
+    if (result == TimedStatus::Idle) {
+      _kicked = false;
+    }
+    return result;
+  }
+
+  // Observe staged work, axis queues, and conditions already detected by pump().
+  // Call pump() to feed commands and detect new conditions.
+  TimedStatus status() const {
+    if (_fault) {
+      return TimedStatus::Stopped;
+    }
     if (_error) {
       return TimedStatus::Error;
     }
     if (_underrun) {
       return TimedStatus::Underrun;
     }
-    if (_count == 0 && !any_waiting() && !any_queue_nonempty()) {
-      _kicked = false;
-      return TimedStatus::Idle;
-    }
-    return TimedStatus::Running;
+    return isBusy() ? TimedStatus::Running : TimedStatus::Idle;
   }
 
  private:

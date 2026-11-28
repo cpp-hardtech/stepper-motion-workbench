@@ -43,6 +43,8 @@ void absolute_waypoints_use_the_planned_coordinates() {
   const auto a = f.plan.addWaypoint(first, 48000);
   const auto b = f.plan.addWaypoint(next, 24000);
   const auto invalid = f.plan.addWaypoint(overflow, 48000);
+  check(f.plan.availableChunks() == 2,
+        "Each accepted waypoint consumes one slot");
   f.plan.pump();
   f.x.drain();
   f.y.drain();
@@ -126,15 +128,25 @@ void absolute_waypoints_can_require_exact_ticks() {
 
 void long_dwell_is_admitted_as_a_unit() {
   Fixture<2> f;
+  check(f.plan.addDwellTicks(0) == TimedAdd::Ok && f.plan.availableChunks() == 2,
+        "A zero-length dwell leaves both slots free");
   check(f.plan.addDwellTicks(3200) == TimedAdd::Ok, "one dwell fits in the horizon");
+  f.y.failNext(AQE_QUEUE_FULL);
+  const auto partial = f.plan.pump();
   const auto busy = f.plan.addDwellTicks(100000);
   const auto planned_while_busy = f.plan.actualTicks();
-  f.plan.pump();
-  f.x.drain();
-  f.y.drain();
-  f.plan.pump();
+  check(partial == TimedStatus::Running && f.x.queueEntries() == 1 &&
+            f.y.isQueueEmpty() && f.plan.availableChunks() == 1,
+        "A partial handoff keeps its planner slot occupied");
+  check(f.plan.pump() == TimedStatus::Running &&
+            f.x.queueEntries() == 1 && f.y.queueEntries() == 1 &&
+            f.plan.availableChunks() == 2,
+        "Completing the handoff frees a slot while both axis queues are active");
   const auto accepted = f.plan.addDwellTicks(100000);
+  check(f.plan.availableChunks() == 0, "A long dwell consumes both free slots");
   f.plan.pump();
+  check(f.plan.availableChunks() == 2,
+        "Both slots are reusable once the long dwell reaches the axis queues");
   f.x.drain();
   f.y.drain();
   printf("100000-tick dwell: rc=%d/%d busy planned=%" PRIu32

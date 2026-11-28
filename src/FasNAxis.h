@@ -266,12 +266,13 @@ class FasNAxis {
   // (P is 0 on the way in and on the way out; the next addWaypoint starts from
   // rest). It is a planned stop-and-wait, not a pause stuffed into a moving
   // slice. Legal only when the position is synced; ticks == 0 is a no-op.
+  // Positive durations below MIN_CMD_TICKS are rejected.
   bool addDwellTicks(uint32_t ticks) {
     if (!_position_synced) {
       return false;
     }
-    if (ticks == 0) {
-      return true;
+    if (ticks < (uint32_t)MIN_CMD_TICKS) {
+      return ticks == 0;
     }
     if (_n_blk >= (int)HORIZON) {
       compact_ring();  // drop executed blocks so the ring slides
@@ -453,6 +454,16 @@ class FasNAxis {
   uint8_t masterAxis() const { return (uint8_t)_master; }
   // Number of blocks committed but not yet fully executed.
   int pendingBlocks() const { return _n_blk - _head; }
+
+  // Absolute coordinate of the last accepted waypoint, in steps. Syncing or
+  // setting the current position establishes a new endpoint. An out-of-range
+  // axis returns zero.
+  int32_t plannedPosition(uint8_t i) const {
+    if (i >= NAXES) {
+      return 0;
+    }
+    return _p[i];
+  }
 
  private:
   void start_prefilled_queues() {

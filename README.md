@@ -28,6 +28,21 @@ pulse encoders without connecting a motor. To run the timed-move example
 against the simulator and see its output, use
 `ctest --test-dir build -V -R '^test_29$'`.
 
+### Generate host simulation traces
+
+Enable `STEPPER_MOTION_HOST_TRACES` to generate HTML traces from the FasNAxis
+simulator using CTest.
+
+```sh
+cmake -S . -B build-trace -DCMAKE_BUILD_TYPE=Debug -DSTEPPER_MOTION_HOST_TRACES=ON
+cmake --build build-trace --target test_26
+ctest --test-dir build-trace -R '^test_26$' --output-on-failure
+```
+
+The trace run writes `F5.html` and `F8.html` under
+`build-trace/tests/host/naxis-traces/tests/out/`. The associated gnuplot files
+are in `build-trace/tests/host/naxis-traces/`. The HTML option defaults to off.
+
 ## ESP32 quick start
 
 The [ESP-IDF example](firmware/esp32/) builds against this checkout as a local
@@ -54,6 +69,10 @@ Arduino project, install this checkout as a local library named
 
 ## API
 
+Use `FasTimed::status()` for read-only monitoring of staged work, axis queues,
+and latched stop, error, or underrun states. Call `pump()` to feed the queues and
+detect new events.
+
 - [StepperMotionEngine](src/StepperMotionEngine.h) binds a STEP output to a
   driver queue and manages steppers.
 - [StepperMotion](src/StepperMotion.h) sets speed and acceleration, starts
@@ -63,9 +82,15 @@ Arduino project, install this checkout as a local library named
 - [FasTimed](src/FasTimed.h) queues coordinated deltas, absolute waypoints,
   and shared dwells. Use `addDeltaExact()` or `addWaypointExact()` to require exact
   tick durations, and `actualTicks64()` to report the committed duration of long
-  streams. [FasNAxis](src/FasNAxis.h) plans coordinated motion along waypoints.
+  streams. Use `availableChunks()` to check how many planner slots are free before
+  refilling a stream. [FasNAxis](src/FasNAxis.h) plans coordinated motion along
+  waypoints.
 - [Examples](examples/) include single-axis, timed, and multi-axis sketches.
   Backend availability and usable pins depend on the board and SDK.
+
+Use `FasNAxis::plannedPosition(axis)` to read the last accepted absolute
+waypoint coordinate in steps, even before it has been fed to the axis queue.
+Synchronizing or setting the current position establishes a new endpoint.
 
 ## Contributing
 
