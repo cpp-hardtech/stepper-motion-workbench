@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "FasNAxis.h"
 #include "StepperMotion.h"
 #include "fas_queue/stepper_queue.h"
 
@@ -195,6 +196,40 @@ void pending_queue_tail_test() {
        "The active command alone is not pending and leaves output untouched");
 }
 
+void naxis_dwell_limits_test() {
+  StepperMotionEngine engine;
+  engine.init();
+  StepperMotion* axis = engine.stepperConnectToPin(0);
+  assert(axis != nullptr);
+  FasNAxis<1, 1> path(FasNAxisConfig{}, engine);
+  assert(path.addAxis(0, axis));
+  path.syncFromSteppers();
+
+  test(path.addDwellTicks(0) && path.block_count() == 0,
+       "Zero dwell is a no-op");
+  const bool accepted = path.addDwellTicks(MIN_CMD_TICKS - 1);
+  const auto blocks = path.block_count();
+  const auto status = path.pump();
+  printf("Dwell of %lu ticks: accepted=%d blocks=%lu pump=%d\n",
+         (unsigned long)(MIN_CMD_TICKS - 1), accepted, (unsigned long)blocks,
+         static_cast<int>(status));
+  fflush(stdout);
+  test(!accepted && blocks == 0 && status == PumpStatus::Idle &&
+           axis->isQueueEmpty(),
+       "A dwell shorter than the queue minimum leaves the planner idle");
+
+  test(path.addDwellTicks(MIN_CMD_TICKS) && path.block_count() == 1,
+       "The minimum dwell fits in the same one-block horizon");
+  path.endPath();
+  test(path.pump() == PumpStatus::Running && axis->queueEntries() == 1 &&
+           axis->isQueueRunning(),
+       "The minimum dwell starts on the real host queue");
+  const auto& queue = fas_queue[0];
+  const auto& pause = queue.entry[queue.read_idx & QUEUE_LEN_MASK];
+  test(pause.ticks == MIN_CMD_TICKS && pause.steps == 0,
+       "The queue retains the requested pause duration and emits no steps");
+}
+
 int main() {
   // assert(sizeof(struct queue_entry) == 6);
   basic_test();
@@ -203,5 +238,6 @@ int main() {
   end_pos_test();
   queued_time_test();
   pending_queue_tail_test();
+  naxis_dwell_limits_test();
   printf("TEST_01 PASSED\n");
 }

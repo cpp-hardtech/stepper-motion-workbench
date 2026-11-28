@@ -266,12 +266,13 @@ class FasNAxis {
   // (P is 0 on the way in and on the way out; the next addWaypoint starts from
   // rest). It is a planned stop-and-wait, not a pause stuffed into a moving
   // slice. Legal only when the position is synced; ticks == 0 is a no-op.
+  // Positive durations below MIN_CMD_TICKS are rejected.
   bool addDwellTicks(uint32_t ticks) {
     if (!_position_synced) {
       return false;
     }
-    if (ticks == 0) {
-      return true;
+    if (ticks < (uint32_t)MIN_CMD_TICKS) {
+      return ticks == 0;
     }
     if (_n_blk >= (int)HORIZON) {
       compact_ring();  // drop executed blocks so the ring slides
