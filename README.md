@@ -23,6 +23,21 @@ pulse encoders without connecting a motor. To run the timed-move example
 against the simulator and see its output, use
 `ctest --test-dir build -V -R '^test_29$'`.
 
+### Generate host simulation traces
+
+Enable `STEPPER_MOTION_HOST_TRACES` to generate HTML traces from the FasNAxis
+simulator using CTest.
+
+```sh
+cmake -S . -B build-trace -DCMAKE_BUILD_TYPE=Debug -DSTEPPER_MOTION_HOST_TRACES=ON
+cmake --build build-trace --target test_26
+ctest --test-dir build-trace -R '^test_26$' --output-on-failure
+```
+
+The trace run writes `F5.html` and `F8.html` under
+`build-trace/tests/host/naxis-traces/tests/out/`. The associated gnuplot files
+are in `build-trace/tests/host/naxis-traces/`. The HTML option defaults to off.
+
 ## ESP32 quick start
 
 The [ESP-IDF example](firmware/esp32/) builds against this checkout as a local

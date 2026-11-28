@@ -1,4 +1,5 @@
 set(motion_src "${PROJECT_SOURCE_DIR}/src")
+option(STEPPER_MOTION_HOST_TRACES "Generate FasNAxis HTML traces in host tests" OFF)
 
 add_library(stepper_motion_host STATIC
     "${motion_src}/StepperMotion.cpp"
@@ -31,4 +32,10 @@ foreach(source IN LISTS test_sources)
         target_link_libraries("${test_name}" PRIVATE stepper_motion_host)
     endif()
     add_test(NAME "${test_name}" COMMAND "${test_name}")
+    if(STEPPER_MOTION_HOST_TRACES AND test_name STREQUAL "test_26")
+        set(naxis_trace_dir "${CMAKE_CURRENT_BINARY_DIR}/naxis-traces")
+        configure_file(viewer_template.html "${naxis_trace_dir}/viewer_template.html" COPYONLY)
+        target_compile_definitions("${test_name}" PRIVATE FAS_NAXIS_TRACE NAXIS_HTML_ROOT=".")
+        set_tests_properties("${test_name}" PROPERTIES WORKING_DIRECTORY "${naxis_trace_dir}")
+    endif()
 endforeach()
