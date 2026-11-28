@@ -98,8 +98,8 @@ class NaxisHtmlDump {
     n_rows++;
   }
 
-  // Splice the accumulated rows into the template's <pre id="trace"> and write
-  // the page. A missing template or output dir leaves nothing on disk.
+  // Fill the title placeholders and the template's <pre id="trace">.
+  // A missing template or output dir leaves nothing on disk.
   void finish() {
     if (!open) {
       return;
@@ -115,24 +115,22 @@ class NaxisHtmlDump {
     if (end == NULL) {
       return;
     }
-    size_t head = (size_t)(after - template_buf);
-    size_t tail = strlen(end);
-    size_t need = head + rows_len + tail + 1;
-    char* out = (char*)malloc(need);
-    if (out == NULL) {
-      return;
-    }
-    memcpy(out, template_buf, head);
-    memcpy(out + head, rows_buf, rows_len);
-    memcpy(out + head + rows_len, end, tail);
-    out[head + rows_len + tail] = 0;
-
     FILE* f = fopen(out_path, "w");
     if (f != NULL) {
-      fwrite(out, 1, head + rows_len + tail, f);
+      const char title_placeholder[] = "{{TRACE_TITLE}}";
+      const char* header = template_buf;
+      const char* marker = strstr(header, title_placeholder);
+      while (marker != NULL && marker < after) {
+        fwrite(header, 1, (size_t)(marker - header), f);
+        writeTitle(f);
+        header = marker + sizeof(title_placeholder) - 1;
+        marker = strstr(header, title_placeholder);
+      }
+      fwrite(header, 1, (size_t)(after - header), f);
+      fwrite(rows_buf, 1, rows_len, f);
+      fputs(end, f);
       fclose(f);
     }
-    free(out);
     free(template_buf);
     template_buf = NULL;
     open = false;
@@ -146,6 +144,26 @@ class NaxisHtmlDump {
   int rows_written() const { return n_rows; }
 
  private:
+  void writeTitle(FILE* f) const {
+    const char* title = title_buf[0] != '\0' ? title_buf : "FasNAxis trace";
+    for (; *title != '\0'; ++title) {
+      switch (*title) {
+        case '&':
+          fputs("&amp;", f);
+          break;
+        case '<':
+          fputs("&lt;", f);
+          break;
+        case '>':
+          fputs("&gt;", f);
+          break;
+        default:
+          fputc((unsigned char)*title, f);
+          break;
+      }
+    }
+  }
+
   static const int NAXIS_HTML_MAX_ROWS = 200000;
   static const size_t NAXIS_HTML_MAX_BYTES = (size_t)NAXIS_HTML_MAX_ROWS * 128;
   char out_path[128];
