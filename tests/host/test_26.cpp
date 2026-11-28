@@ -5551,6 +5551,58 @@ static void f_sliding_ring() {
          total, x, rests);
 }
 
+static void f_planned_position() {
+  SimPort x(4000), y(4000);
+  FasNAxisConfig cfg;
+  FasNAxis<2, 3, SimPort, TestStepperMotionEngine> path(cfg, sim_engine);
+  const auto& plan = path;
+  const int32_t first[] = {4, -2};
+  const int32_t last[] = {6, -3};
+  const int32_t next[] = {9, -4};
+  test(plan.plannedPosition(0) == 0 && plan.plannedPosition(1) == 0,
+       "initial plan has zero coordinates");
+  test(!path.addWaypoint(first), "reject waypoint before sync");
+  test(path.addAxis(0, &x) && path.addAxis(1, &y), "register simulated axes");
+  path.syncFromSteppers();
+  test(path.addWaypoint(first), "accept first waypoint");
+  test(path.addDwellTicks(16000) && plan.plannedPosition(0) == first[0] &&
+           plan.plannedPosition(1) == first[1],
+       "dwell leaves the planned endpoint at the first waypoint");
+  test(path.addWaypoint(last), "accept last waypoint");
+  test(path.addWaypoint(last) && path.pendingBlocks() == 3,
+       "duplicate waypoint leaves the horizon unchanged");
+  test(!path.addWaypoint(next), "reject waypoint when the horizon is full");
+  test(plan.plannedPosition(0) == last[0] && plan.plannedPosition(1) == last[1] &&
+           plan.plannedPosition(2) == 0 && x.isQueueEmpty() && y.isQueueEmpty(),
+       "before pumping, read the last accepted endpoint and guard invalid axes");
+  printf("planned position before pump: (%d,%d), simulated position=(%d,%d)\n",
+         plan.plannedPosition(0), plan.plannedPosition(1), x.position(),
+         y.position());
+
+  path.endPath();
+  for (int i = 0; i < 100 && path.isBusy(); ++i) {
+    const auto status = path.pump();
+    test(status == PumpStatus::Running || status == PumpStatus::Idle,
+         "feed planned positions to the simulated axes");
+    x.drain_one();
+    y.drain_one();
+  }
+  test(!path.isBusy() && plan.plannedPosition(0) == x.position() &&
+           plan.plannedPosition(1) == y.position() && x.position() == last[0] &&
+           y.position() == last[1],
+       "after draining, the plan and simulated axes reach the endpoint");
+
+  const int32_t rebased[] = {100, -50};
+  path.setCurrentPosition(rebased);
+  test(plan.plannedPosition(0) == rebased[0] &&
+           plan.plannedPosition(1) == rebased[1],
+       "explicit rebase updates the planned endpoint");
+  path.syncFromSteppers();
+  test(plan.plannedPosition(0) == x.position() &&
+           plan.plannedPosition(1) == y.position(),
+       "synchronization rebases the planner to the simulated axes");
+}
+
 int main() {
   puts("FasNAxis TDD");
 #ifdef FAS_NAXIS_TRACE
@@ -5569,6 +5621,7 @@ int main() {
   f20_long_polyline();
   f_coarse_helix_cruises();
   f_sliding_ring();
+  f_planned_position();
   f2f_two_block();
   f2h_nblock_vs_f20();
   f3b_stoppability();

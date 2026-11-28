@@ -62,6 +62,10 @@ Arduino project, install this checkout as a local library named
 - [Examples](examples/) include single-axis, timed, and multi-axis sketches.
   Backend availability and usable pins depend on the board and SDK.
 
+Use `FasNAxis::plannedPosition(axis)` to read the last accepted absolute
+waypoint coordinate in steps, even before it has been fed to the axis queue.
+Synchronizing or setting the current position establishes a new endpoint.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
