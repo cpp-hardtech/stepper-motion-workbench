@@ -17,6 +17,11 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+Run `./build/tests/host/test_29 --command-csv` from the repository root to add
+`test_29.commands.csv` to the simulated square trace. Each row records the
+start and end of a paired command in 16 MHz ticks, signed step deltas, and both
+end positions.
+
 The tests use a simulated stepper queue. They exercise ramp calculations,
 position tracking, timed moves, coordinated paths, and the ESP32 I2S and RMT
 pulse encoders without connecting a motor. To run the timed-move example

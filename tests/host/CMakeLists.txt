@@ -32,3 +32,10 @@ foreach(source IN LISTS test_sources)
     endif()
     add_test(NAME "${test_name}" COMMAND "${test_name}")
 endforeach()
+
+add_test(NAME test_29_command_csv
+    COMMAND "${CMAKE_COMMAND}"
+        "-DTRACE_PROGRAM=$<TARGET_FILE:test_29>"
+        "-DTRACE_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_29_command_csv"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/check_timed_command_csv.cmake"
+)
