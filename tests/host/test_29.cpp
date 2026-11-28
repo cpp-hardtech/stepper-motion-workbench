@@ -10,6 +10,7 @@
 // A chunk may change ramp-step by at most its own step count, and a
 // reversal or a zero-step axis is legal only from P = 0.
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -674,8 +675,8 @@ static int wav_peak(const char* path, int* left_nz, int* right_nz) {
   return peak;
 }
 
-static void record_pair(SimPort* x, SimPort* y, FILE* dat, int16_t* pcm,
-                        uint32_t frames) {
+static void record_pair(SimPort* x, SimPort* y, FILE* dat, FILE* commands,
+                        int16_t* pcm, uint32_t frames) {
   uint32_t t0 = x->clock();
   test(y->clock() == t0, "axes share the clock before the command");
   int64_t sx = 0;
@@ -702,8 +703,18 @@ static void record_pair(SimPort* x, SimPort* y, FILE* dat, int16_t* pcm,
   if (nstep == 0) {
     nstep = 1;
   }
-  int32_t x_at = x->getCurrentPosition() - (ux ? (int32_t)sx : -(int32_t)sx);
-  int32_t y_at = y->getCurrentPosition() - (uy ? (int32_t)sy : -(int32_t)sy);
+  const int32_t x_end = x->getCurrentPosition();
+  const int32_t y_end = y->getCurrentPosition();
+  const int32_t x_delta = ux ? (int32_t)sx : -(int32_t)sx;
+  const int32_t y_delta = uy ? (int32_t)sy : -(int32_t)sy;
+  if (commands != NULL) {
+    fprintf(commands,
+            "%" PRIu32 ",%" PRIu32 ",%" PRId32 ",%" PRId32 ",%" PRId32
+            ",%" PRId32 "\n",
+            t0, x->clock(), x_delta, y_delta, x_end, y_end);
+  }
+  int32_t x_at = x_end - x_delta;
+  int32_t y_at = y_end - y_delta;
   uint32_t x_left = (uint32_t)sx;
   uint32_t y_left = (uint32_t)sy;
   uint32_t period = span / nstep;
@@ -725,7 +736,7 @@ static void record_pair(SimPort* x, SimPort* y, FILE* dat, int16_t* pcm,
   }
 }
 
-static void t_square_trace() {
+static void t_square_trace(FILE* commands) {
   RampMap map(500, 100000);
   test(map.calculate_ramp_steps(36000) == 0, "trace start is ramp-step 0");
   test(map.calculate_ramp_steps(6400) == 31, "trace top is ramp-step 31");
@@ -770,13 +781,13 @@ static void t_square_trace() {
     expect_add(a, TimedAdd::Rejected, "horizon 8 backpressure");
     test(plan.pump() == TimedStatus::Running, "trace pump while streaming");
     while (!x.isQueueEmpty() && !y.isQueueEmpty()) {
-      record_pair(&x, &y, dat, pcm, frames);
+      record_pair(&x, &y, dat, commands, pcm, frames);
     }
     test(plan.pump() == TimedStatus::Idle, "drained batch settles the ring");
   }
   test(plan.pump() == TimedStatus::Running, "trace flushes the tail");
   while (!x.isQueueEmpty() && !y.isQueueEmpty()) {
-    record_pair(&x, &y, dat, pcm, frames);
+    record_pair(&x, &y, dat, commands, pcm, frames);
   }
   test(plan.pump() == TimedStatus::Idle, "trace settles");
   test(x.getCurrentPosition() == 0 && y.getCurrentPosition() == 0,
@@ -815,7 +826,14 @@ static void t_square_trace() {
          frames);
 }
 
-int main() {
+int main(int argc, char** argv) {
+  const bool export_commands =
+      argc == 2 && strcmp(argv[1], "--command-csv") == 0;
+  if (argc != 1 && !export_commands) {
+    fprintf(stderr, "Usage: %s [--command-csv]\n", argv[0]);
+    return 1;
+  }
+
   anchor_ramp();
   t_range_and_dwell();
   t_exact_and_cruise();
@@ -827,7 +845,26 @@ int main() {
   t_underrun();
   t_horizon();
   t_stop_and_inject();
-  t_square_trace();
+  const char* const csv_path = "test_29.commands.csv";
+  FILE* commands = NULL;
+  if (export_commands) {
+    commands = fopen(csv_path, "w");
+    if (commands == NULL) {
+      perror(csv_path);
+      return 1;
+    }
+    fputs("start_tick,end_tick,x_delta,y_delta,x_position,y_position\n",
+          commands);
+  }
+  t_square_trace(commands);
+  if (commands != NULL) {
+    const bool write_error = ferror(commands) != 0;
+    if (fclose(commands) != 0 || write_error) {
+      fprintf(stderr, "Could not write %s\n", csv_path);
+      return 1;
+    }
+    printf("Wrote %s\n", csv_path);
+  }
   puts("test_29 passed");
   return 0;
 }

@@ -46,3 +46,10 @@ add_executable(naxis_html_dump_test naxis_html_dump_test.cpp)
 target_compile_features(naxis_html_dump_test PRIVATE cxx_std_17)
 add_test(NAME naxis_html_dump COMMAND naxis_html_dump_test)
 set_tests_properties(naxis_html_dump PROPERTIES WORKING_DIRECTORY "${naxis_html_dump_dir}")
+
+add_test(NAME test_29_command_csv
+    COMMAND "${CMAKE_COMMAND}"
+        "-DTRACE_PROGRAM=$<TARGET_FILE:test_29>"
+        "-DTRACE_DIR=${CMAKE_CURRENT_BINARY_DIR}/test_29_command_csv"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/check_timed_command_csv.cmake"
+)
